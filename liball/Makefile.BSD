@@ -92,6 +92,6 @@ SRCS	+=	warnp.c
 IDIRS	+=	-I${LIBCPERCIVA_DIR}/util
 .PATH.c	:	${LIB_DIR}/util
 SRCS	+=	mapfile.c
-IDIRS	+=	-I{LIB_DIR}/util
+IDIRS	+=	-I${LIB_DIR}/util
 
 .include <bsd.lib.mk>
