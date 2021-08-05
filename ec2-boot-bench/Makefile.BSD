@@ -1,0 +1,26 @@
+PROG=	ec2-boot-bench
+SRCS=	main.c
+MAN1	=
+BINDIR	?=	/usr/local/bin
+
+# Library code required
+LDADD_REQ	=	-lcrypto -lssl
+
+# Useful relative directories
+LIBCPERCIVA_DIR =	../libcperciva
+LIBKIVALOO_DIR	=	../libkivaloo
+LIB_DIR	=	../lib
+
+# libcperciva includes
+IDIRS	+=	-I ${LIBCPERCIVA_DIR}/aws
+IDIRS	+=	-I ${LIBCPERCIVA_DIR}/events
+IDIRS	+=	-I ${LIBCPERCIVA_DIR}/util
+
+# libkivaloo includes
+IDIRS	+=	-I ${LIBKIVALOO_DIR}/http
+
+# library includes
+IDIRS	+=	-I ${LIB_DIR}/ec2
+IDIRS	+=	-I ${LIB_DIR}/util
+
+.include <bsd.prog.mk>
