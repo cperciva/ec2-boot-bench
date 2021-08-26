@@ -2,7 +2,7 @@ PKG=	ec2-boot-bench
 PROGS=	ec2-boot-bench
 TESTS=
 SUBST_VERSION_FILES=
-PUBLISH= ${PROGS} COPYRIGHT Makefile libcperciva lib libkivaloo liball
+PUBLISH= ${PROGS} COPYRIGHT Makefile libcperciva lib liball
 
 ### Shared code between Tarsnap projects.
 

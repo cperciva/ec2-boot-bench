@@ -6,7 +6,6 @@ MK_WERROR	=	no
 
 # Useful relative directories
 LIBCPERCIVA_DIR	=	../libcperciva
-LIBKIVALOO_DIR	=	../libkivaloo
 LIB_DIR		=	../lib
 
 # EC2 API requests
@@ -21,23 +20,23 @@ SRCS	+=	aws_sign.c
 IDIRS	+=	-I${LIBCPERCIVA_DIR}/aws
 
 # HTTP client protocol
-.PATH.c	:	${LIBKIVALOO_DIR}/http
+.PATH.c	:	${LIBCPERCIVA_DIR}/http
 SRCS	+=	http.c
 SRCS	+=	https.c
-IDIRS	+=	-I${LIBKIVALOO_DIR}/http
+IDIRS	+=	-I${LIBCPERCIVA_DIR}/http
 
 # Buffered networking
-.PATH.c	:	${LIBKIVALOO_DIR}/netbuf
+.PATH.c	:	${LIBCPERCIVA_DIR}/netbuf
 SRCS	+=	netbuf_read.c
 SRCS	+=	netbuf_ssl.c
 SRCS	+=	netbuf_write.c
-IDIRS	+=	-I${LIBKIVALOO_DIR}/netbuf
+IDIRS	+=	-I${LIBCPERCIVA_DIR}/netbuf
 
 # SSL layer
-.PATH.c	:	${LIBKIVALOO_DIR}/network_ssl
+.PATH.c	:	${LIBCPERCIVA_DIR}/network_ssl
 SRCS	+=	network_ssl.c
 SRCS	+=	network_ssl_compat.c
-IDIRS	+=	-I${LIBKIVALOO_DIR}/network_ssl
+IDIRS	+=	-I${LIBCPERCIVA_DIR}/network_ssl
 
 # Fundamental algorithms
 .PATH.c	:	${LIBCPERCIVA_DIR}/alg
