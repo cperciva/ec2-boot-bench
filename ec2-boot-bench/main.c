@@ -94,6 +94,31 @@ xmlextract(const uint8_t * buf, size_t buflen, const char * tagname)
 }
 
 static int
+handle_ec2_errors(const char * api_name, struct http_response * R)
+{
+
+	if (R == NULL) {
+		warn0("EC2 %s API request failed", api_name);
+		return (-1);
+	}
+
+	/* Check that we have a response body. */
+	if ((R->bodylen == 0) || (R->bodylen == (size_t)(-1))) {
+		warn0("EC2 %s API request (status %d) got no response body",
+		    api_name, R->status);
+		return (-1);
+	}
+
+	if (R->status != 200) {
+		warn0("EC2 %s API request failed (status %d):\n%.*s",
+		    api_name, R->status, R->bodylen, R->body);
+		return (-1);
+	}
+
+	return (0);
+}
+
+static int
 callback_launch(void * cookie, struct http_response * R)
 {
 
@@ -105,15 +130,7 @@ callback_launch(void * cookie, struct http_response * R)
 		goto err0;
 	}
 
-	/* Check status. */
-	if ((R == NULL) || (R->status != 200)) {
-		warn0("EC2 RunInstances API request failed");
-		goto err0;
-	}
-
-	/* Check that we have a response body. */
-	if ((R->bodylen == 0) || (R->bodylen == (size_t)(-1))) {
-		warn0("EC2 RunInstances succeeded but no response body?");
+	if (handle_ec2_errors("RunInstances", R)) {
 		goto err0;
 	}
 
@@ -239,9 +256,7 @@ callback_describe(void * cookie, struct http_response * R)
 	if (R->status != 200)
 		goto done;
 
-	/* Check that we have a response body. */
-	if ((R->bodylen == 0) || (R->bodylen == (size_t)(-1))) {
-		warn0("EC2 DescribeInstances succeeded but no response body?");
+	if (handle_ec2_errors("DescribeInstances", R)) {
 		goto err0;
 	}
 
@@ -525,15 +540,7 @@ callback_terminate(void * cookie, struct http_response * R)
 
 	(void)cookie; /* UNUSED */
 
-	/* Check status. */
-	if ((R == NULL) || (R->status != 200)) {
-		warn0("EC2 TerminateInstances API request failed");
-		goto err0;
-	}
-
-	/* Check that we have a response body. */
-	if ((R->bodylen == 0) || (R->bodylen == (size_t)(-1))) {
-		warn0("EC2 TerminateInstances succeeded but no response body?");
+	if (handle_ec2_errors("TerminateInstances", R)) {
 		goto err0;
 	}
 
