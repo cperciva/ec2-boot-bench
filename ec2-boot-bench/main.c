@@ -45,6 +45,7 @@ static struct timeval t_open;
 static size_t ndescribes = 0;
 static size_t npings = 0;
 static int terminated = 0;
+static int ipv6 = 1;
 
 static int poke(void);
 
@@ -178,15 +179,17 @@ launch(void)
 	    "Action=RunInstances&"
 	    "ImageId=%s&"
 	    "InstanceType=%s&"
+	    "NetworkInterface.1.DeviceIndex=0&"
 	    "%s%s%s"
+	    "NetworkInterface.1.%s&"
 	    "%s%s%s"
 	    "MinCount=1&MaxCount=1&"
-	    "Ipv6AddressCount=1&"
 	    "Version=2016-11-15",
 	    ami_id, itype,
-	    subnet_id ? "SubnetId=" : "",
+	    subnet_id ? "NetworkInterface.1.SubnetId=" : "",
 	    subnet_id ? subnet_id : "",
 	    subnet_id ? "&" : "",
+	    ipv6 ? "Ipv6AddressCount=1" : "AssociatePublicIpAddress=true",
 	    user_data_fname ? "UserData=" : "",
 	    user_data_fname ? userdatahexbuf : "",
 	    user_data_fname ? "&" : "") == -1)
@@ -670,9 +673,9 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s [%s] [%s]\n",
+	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s [%s] [%s] [%s]\n",
 	    "--keys <keyfile>", "--region <name>", "--ami <AMI Id>",
-	    "--itype <instance type>", "--subnet <subnet Id>",
+	    "--itype <instance type>", "--no-ipv6", "--subnet <subnet Id>",
 	    "--user-data <file>");
 	exit(1);
 }
@@ -696,6 +699,9 @@ main(int argc, char * argv[])
 			break;
 		GETOPT_OPTARG("--keys"):
 			keyfile = optarg;
+			break;
+		GETOPT_OPT("--no-ipv6"):
+			ipv6 = 0;
 			break;
 		GETOPT_OPTARG("--region"):
 			region = optarg;
