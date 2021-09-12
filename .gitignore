@@ -1,0 +1,7 @@
+*.a
+*.o
+
+/cflags-filter.sh
+/cpusupport-config.h
+/ec2-boot-bench/ec2-boot-bench
+/posix-flags.sh
