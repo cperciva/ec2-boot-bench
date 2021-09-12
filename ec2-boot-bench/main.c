@@ -29,6 +29,7 @@ static const char * ami_id = NULL;
 static const char * itype = NULL;
 static const char * keyfile = NULL;
 static const char * region = NULL;
+static const char * security_group = NULL;
 static const char * subnet_id = NULL;
 static const char * user_data_fname = NULL;
 static char * key_id;
@@ -181,6 +182,7 @@ launch(void)
 	    "InstanceType=%s&"
 	    "NetworkInterface.1.DeviceIndex=0&"
 	    "%s%s%s"
+	    "%s%s%s"
 	    "NetworkInterface.1.%s&"
 	    "%s%s%s"
 	    "MinCount=1&MaxCount=1&"
@@ -189,6 +191,9 @@ launch(void)
 	    subnet_id ? "NetworkInterface.1.SubnetId=" : "",
 	    subnet_id ? subnet_id : "",
 	    subnet_id ? "&" : "",
+	    security_group ? "NetworkInterface.1.SecurityGroupId.1=" : "",
+	    security_group ? security_group : "",
+	    security_group ? "&" : "",
 	    ipv6 ? "Ipv6AddressCount=1" : "AssociatePublicIpAddress=true",
 	    user_data_fname ? "UserData=" : "",
 	    user_data_fname ? userdatahexbuf : "",
@@ -673,9 +678,10 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s [%s] [%s] [%s]\n",
+	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s [%s] [%s] [%s] [%s]\n",
 	    "--keys <keyfile>", "--region <name>", "--ami <AMI Id>",
-	    "--itype <instance type>", "--no-ipv6", "--subnet <subnet Id>",
+	    "--itype <instance type>", "--no-ipv6",
+	    "--security-group <security group Id>", "--subnet <subnet Id>",
 	    "--user-data <file>");
 	exit(1);
 }
@@ -705,6 +711,9 @@ main(int argc, char * argv[])
 			break;
 		GETOPT_OPTARG("--region"):
 			region = optarg;
+			break;
+		GETOPT_OPTARG("--security-group"):
+			security_group = optarg;
 			break;
 		GETOPT_OPTARG("--subnet"):
 			subnet_id = optarg;
