@@ -15,6 +15,7 @@
 #include "getopt.h"
 #include "http.h"
 #include "mapfile.h"
+#include "parsenum.h"
 #include "sock.h"
 #include "monoclock.h"
 #include "warnp.h"
@@ -32,6 +33,8 @@ static const char * region = NULL;
 static const char * security_group = NULL;
 static const char * subnet_id = NULL;
 static const char * user_data_fname = NULL;
+static const char * bootvideo = NULL;
+static double fps = 0.0;
 static char * key_id;
 static char * key_secret;
 static struct sock_addr ** ec2api_addrs;
@@ -47,6 +50,11 @@ static size_t ndescribes = 0;
 static size_t npings = 0;
 static int terminated = 0;
 static int ipv6 = 1;
+static int imgnum = 0;
+static char * screenshotdir = NULL;
+void * screenshot_timer_cookie;
+uint8_t * imgbuf = NULL;
+size_t imgbuflen;
 
 static int poke(void);
 
@@ -543,6 +551,241 @@ err0:
 }
 
 static int
+callback_screenshot(void * cookie, struct http_response * R)
+{
+	char * imagedata = NULL;
+	char * s;
+	FILE * f;
+
+	(void)cookie; /* UNUSED */
+
+	/*
+	 * HTTP 429 errors can occur if we send screenshot requests too fast.
+	 * HTTP 500 errors can also occur for the same reason, oddly enough.
+	 * Other errors may also occur; in all cases, reuse the previous
+	 * screenshot if we have one, in order to keep the constant frame rate.
+	 */
+	if (R == NULL)
+		warn0("GetConsoleScreenshot failed%s",
+		    imgbuf ? "; reusing previous frame" : "");
+	else if (R->status != 200)
+		warn0("GetConsoleScreenshot failed with status %d%s",
+		    R->status,
+		    imgbuf ? "; reusing previous frame" : "");
+	else {
+		/* Extract image from response. */
+		if ((imagedata =
+		    xmlextract(R->body, R->bodylen, "imageData")) == NULL) {
+			warn0("Could not find <imagedata>"
+			    " in GetConsoleScreenshot response");
+			goto err1;
+		}
+
+		/* Free the previous frame, if we had one. */
+		free(imgbuf);
+
+		/* Decode the base64-encoded image. */
+		imgbuflen = strlen(imagedata);
+		if ((imgbuf = malloc(imgbuflen)) == NULL)
+			goto err2;
+		if (b64decode(imagedata, imgbuflen, imgbuf, &imgbuflen)) {
+			warn0("Invalid base64-encoded image received");
+			goto err2;
+		}
+	}
+
+	/* If we don't have an image yet, exit early. */
+	if (imgbuf == NULL)
+		goto done;
+
+	/* Write image to file. */
+	if (asprintf(&s, "%s/img%05d.jpg", screenshotdir, imgnum++) == -1)
+		goto err2;
+	if ((f = fopen(s, "w")) == NULL) {
+		warnp("fopen");
+		goto err3;
+	}
+	if (fwrite(imgbuf, imgbuflen, 1, f) != 1) {
+		warnp("fwrite");
+		goto err4;
+	}
+	fclose(f);
+	free(s);
+
+	/* Free extracted image data (or free(NULL) if frame missing). */
+	free(imagedata);
+
+	/* Free response body, if we had one. */
+done:
+	if (R != NULL)
+		free(R->body);
+
+	/* Success! */
+	return (0);
+
+err4:
+	fclose(f);
+err3:
+	free(s);
+err2:
+	free(imagedata);
+err1:
+	if (R != NULL)
+		free(R->body);
+err0:
+	/* Failure! */
+	return (-1);
+}
+
+static int
+screenshot(void)
+{
+	char * s;
+
+	/* Generate EC2 API request. */
+	if (asprintf(&s,
+	    "Action=GetConsoleScreenshot&"
+	    "InstanceId=%s&"
+	    "Version=2016-11-15",
+	    instance_id) == -1)
+		goto err0;
+
+	/* Issue API request. */
+	if (ec2_request(ec2api_addrs, key_id, key_secret,
+	    region, (const uint8_t *)s, strlen(s), 1048576, callback_screenshot,
+	    NULL) == NULL) {
+		warnp("ec2_request");
+		goto err1;
+	}
+
+	/* Success! */
+	return (0);
+
+err1:
+	free(s);
+err0:
+	/* Failure! */
+	return (-1);
+}
+
+static int
+screenshot_tick(void * cookie)
+{
+
+	(void)cookie; /* UNUSED */
+
+	/* Schedule the next screenshot. */
+	screenshot_timer_cookie = events_timer_register_double(screenshot_tick,
+	    NULL, 1.0 / fps);
+	if (screenshot_timer_cookie == NULL) {
+		warnp("events_timer_register_double");
+		goto err0;
+	}
+
+	/* Take a screenshot now. */
+	if (screenshot())
+		goto err0;
+
+	/* Success! */
+	return (0);
+
+err0:
+	/* Failure! */
+	return (-1);
+}
+
+static int
+domovie(void)
+{
+	char * tmpmovie;
+	char * cmdline;
+	FILE * f_in;
+	FILE * f_out;
+	uint8_t buf[4096];
+	size_t lenread;
+	size_t i;
+	char * s;
+
+	/* Generate a movie from the frames we captured. */
+	if (asprintf(&tmpmovie, "%s/out.mp4", screenshotdir) == -1) {
+		warnp("asprintf");
+		goto err0;
+	}
+	if (asprintf(&cmdline, "ffmpeg -framerate %f -loglevel warning"
+	    " -i %s/img%%05d.jpg %s", fps, screenshotdir, tmpmovie) == -1) {
+		warnp("asprintf");
+		goto err1;
+	}
+	if (system(cmdline)) {
+		warnp("ffmpeg execution failed");
+		goto err2;
+	}
+
+	/*
+	 * Copy the generated movie to the target file name.  We do this rather
+	 * than asking ffmpeg to generate the file directly into the requested
+	 * location because we're invoking ffmpeg with system(3) and don't want
+	 * to worry about escaping hazardous characters in the file name.
+	 */
+	if ((f_in = fopen(tmpmovie, "r")) == NULL) {
+		warnp("fopen(%s)", tmpmovie);
+		goto err2;
+	}
+	if ((f_out = fopen(bootvideo, "w")) == NULL) {
+		warnp("fopen(%s)", bootvideo);
+		goto err3;
+	}
+	do {
+		lenread = fread(buf, 1, 4096, f_in);
+		if (lenread == 0)
+			break;
+		if (fwrite(buf, lenread, 1, f_out) != 1) {
+			warnp("fwrite");
+			goto err4;
+		}
+	} while (1);
+	if (ferror(f_in)) {
+		warnp("fread(%s)", tmpmovie);
+		goto err4;
+	}
+
+	/* Clean up temporary files. */
+	unlink(tmpmovie);
+	for (i = 0; i < imgnum; i++) {
+		if (asprintf(&s, "%s/img%05d.jpg", screenshotdir, i) == -1) {
+			warnp("asprintf");
+			goto err4;
+		}
+		unlink(s);
+		free(s);
+	}
+	rmdir(screenshotdir);
+
+	/* Close files used for copying movie. */
+	fclose(f_out);
+	fclose(f_in);
+
+	/* Free temporary strings. */
+	free(cmdline);
+	free(tmpmovie);
+
+	/* Success! */
+	return (0);
+
+err4:
+	fclose(f_out);
+err3:
+	fclose(f_in);
+err2:
+	free(cmdline);
+err1:
+	free(tmpmovie);
+err0:
+	/* Failure! */
+	return (-1);
+}
+
+static int
 callback_terminate(void * cookie, struct http_response * R)
 {
 
@@ -570,6 +813,10 @@ static int
 terminate(void)
 {
 	char * s;
+
+	/* Shut down screenshotting if in process. */
+	if (screenshot_timer_cookie)
+		events_timer_cancel(screenshot_timer_cookie);
 
 	/* Generate EC2 API request. */
 	if (asprintf(&s,
@@ -613,6 +860,7 @@ tick(void * cookie)
 static int
 poke(void)
 {
+	struct timeval t_now;
 
 	/* If the instance isn't launched yet, launch it. */
 	if (t_start.tv_sec == 0)
@@ -643,6 +891,15 @@ poke(void)
 		return (0);
 	}
 
+	/*
+	 * If we want to generate a movie and we're not already taking
+	 * console screenshots, start taking them.
+	 */
+	if ((fps > 0.0) && (screenshot_timer_cookie == NULL)) {
+		if (screenshot_tick(NULL))
+			goto err0;
+	}
+
 	/* We should have a target for SYN pings. */
 	assert((s_tgt != NULL) && (s_tgt[0] != NULL));
 
@@ -668,6 +925,27 @@ poke(void)
 		return (0);
 	}
 
+	/*
+	 * If we're generating a movie, wait at least 2 seconds and at least
+	 * 5 frames extra, in order to capture anything which happens after
+	 * the SSH port opens and also to allow the movie to "hold" on the
+	 * final frame in case it's played in a loop.
+	 */
+	monoclock_get(&t_now);
+	if ((fps > 0) && ((timeval_diff(t_open, t_now) < 2.0) ||
+	    (timeval_diff(t_open, t_now) < 5.0 / fps))) {
+		/* Come back later. */
+		assert(timer_cookie == NULL);
+		if ((timer_cookie =
+		    events_timer_register_double(tick, NULL, 0.1)) == NULL) {
+			warnp("events_timer_register_double");
+			goto err0;
+		}
+
+		/* All done. */
+		return (0);
+	}
+
 diediedie:
 	/* Terminate the instance. */
 	if (terminate())
@@ -685,11 +963,13 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s [%s] [%s] [%s] [%s]\n",
+	fprintf(stderr, "usage: ec2-boot-bench %s %s %s %s"
+	    " [%s] [%s] [%s] [%s] [%s [%s]]\n",
 	    "--keys <keyfile>", "--region <name>", "--ami <AMI Id>",
 	    "--itype <instance type>", "--no-ipv6",
 	    "--security-group <security group Id>", "--subnet <subnet Id>",
-	    "--user-data <file>");
+	    "--user-data <file>", "--bootvideo <file>",
+	    "--fps <frame rate>");
 	exit(1);
 }
 
@@ -698,6 +978,7 @@ main(int argc, char * argv[])
 {
 	const char * ch;
 	char * ec2api_hostname;
+	const char * tmpdir;
 
 	WARNP_INIT;
 
@@ -728,6 +1009,15 @@ main(int argc, char * argv[])
 		GETOPT_OPTARG("--user-data"):
 			user_data_fname = optarg;
 			break;
+		GETOPT_OPTARG("--bootvideo"):
+			bootvideo = optarg;
+			break;
+		GETOPT_OPTARG("--fps"):
+			if (PARSENUM(&fps, optarg, 0, INFINITY)) {
+				warnp("Cannot parse: %s %s", ch, optarg);
+				exit(1);
+			}
+			break;
 		GETOPT_MISSING_ARG:
 			fprintf(stderr, "missing argument\n");
 			/* FALLTHROUGH */
@@ -744,6 +1034,21 @@ main(int argc, char * argv[])
 	if ((ami_id == NULL) || (keyfile == NULL) || (itype == NULL) ||
 	    (region == NULL))
 		usage();
+	if ((bootvideo == NULL) && (fps != 0.0))
+		usage();
+
+	/* Check frame rate. */
+	if (bootvideo != NULL) {
+		/* Set default if frame rate not set. */
+		if (fps == 0.0)
+			fps = 1.0;
+
+		/* Warn about high frame rates. */
+		if (fps > 1.0)
+			warn0("Requested fps rate exceeds default"
+			    " EC2 throttling limit of 1 request per second"
+			    " for GetConsoleScreenshot");
+	}
 
 	/* Load AWS keys. */
 	if (aws_readkeys(keyfile, &key_id, &key_secret)) {
@@ -760,6 +1065,21 @@ main(int argc, char * argv[])
 	if ((ec2api_addrs = sock_resolve(ec2api_hostname)) == NULL) {
 		warnp("sock_resolve(%s)", ec2api_hostname);
 		exit(1);
+	}
+
+	/* If we're making a movie, create a temporary directory. */
+	if (bootvideo != NULL) {
+		if ((tmpdir = getenv("TMPDIR")) == NULL)
+			tmpdir = "/tmp";
+		if (asprintf(&screenshotdir, "%s/bootvideo.XXXXXXXX",
+		    tmpdir) == -1) {
+			warnp("asprintf");
+			exit(1);
+		}
+		if (mkdtemp(screenshotdir) == NULL) {
+			warnp("mkdtemp");
+			exit(1);
+		}
 	}
 
 	/* Kick things off... */
@@ -791,6 +1111,14 @@ main(int argc, char * argv[])
 	    timeval_diff(t_running, t_closed));
 	printf("Moving from port closed to port open took: %0.6f s\n",
 	    timeval_diff(t_closed, t_open));
+
+	/* Generate movie if requested. */
+	if (fps > 0.0) {
+		printf("Generating boot movie using ffmpeg"
+		    "from %d frames...\n", imgnum);
+		if (domovie())
+			exit(1);
+	}
 
 	return (0);
 }

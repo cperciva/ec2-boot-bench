@@ -38,5 +38,5 @@ clean:
 ${PROG}:${SRCS:.c=.o} ${LIBALL}
 	${CC} -o ${PROG} ${SRCS:.c=.o} ${LIBALL} ${LDFLAGS} ${LDADD_EXTRA} ${LDADD_REQ} ${LDADD_POSIX}
 
-main.o: main.c ../libcperciva/util/asprintf.h ../libcperciva/aws/aws_readkeys.h ../libcperciva/util/b64encode.h ../lib/ec2/ec2_request.h ../libcperciva/events/events.h ../libcperciva/util/getopt.h ../libcperciva/http/http.h ../lib/util/mapfile.h ../libcperciva/util/sock.h ../libcperciva/util/monoclock.h ../libcperciva/util/warnp.h
+main.o: main.c ../libcperciva/util/asprintf.h ../libcperciva/aws/aws_readkeys.h ../libcperciva/util/b64encode.h ../lib/ec2/ec2_request.h ../libcperciva/events/events.h ../libcperciva/util/getopt.h ../libcperciva/http/http.h ../lib/util/mapfile.h ../libcperciva/util/parsenum.h ../libcperciva/util/sock.h ../libcperciva/util/monoclock.h ../libcperciva/util/warnp.h
 	${CC} ${CFLAGS_POSIX} -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -DCPUSUPPORT_CONFIG_FILE=\"cpusupport-config.h\"  -I.. ${IDIRS} ${CPPFLAGS} ${CFLAGS} -c main.c -o main.o
