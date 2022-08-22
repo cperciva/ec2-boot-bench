@@ -1,0 +1,29 @@
+Installing
+----------
+
+To build and install ec2-boot-bench, run:
+# make BINDIR=/path/to/target/directory install
+
+This software should build and run on any IEEE Std 1003.1 (POSIX) compliant
+system which
+  1. Includes the Software Development Utilities option,
+  2. Has OpenSSL available via -lcrypto -lssl and #include <openssl/foo>, and
+  3. Provides /dev/urandom.
+
+Platform-specific notes
+-----------------------
+
+- On macOS, the <unistd.h> header is broken and fails to declare necessary
+  functions when _DPOSIX_C_SOURCE is defined.  To install on macOS, run:
+# make CFLAGS="-O2 -D_DARWIN_C_SOURCE" BINDIR=/path/to/target/directory install
+
+Updating build code and releasing
+---------------------------------
+
+The POSIX-compatible Makefiles are generated via `make Makefiles` from the
+included (far more readable) BSD Makefiles.  To run this target, you will
+need to have a BSD `make(1)` utility; NetBSD's `make(1)` is available for many
+operating systems as `bmake`.
+
+Release tarballs are generated via `make VERSION=x.y.z publish`, subject
+to the same caveat of needing a BSD-compatible make.
