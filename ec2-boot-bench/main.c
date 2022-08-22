@@ -1,3 +1,7 @@
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE
+#endif
+
 #include <sys/socket.h>
 
 #include <assert.h>
